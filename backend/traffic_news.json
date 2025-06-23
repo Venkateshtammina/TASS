@@ -1,0 +1,41 @@
+{
+  "date": "2025-05-06",
+  "news": [
+    {
+      "title": "Heavy Traffic on MG Road Due to Metro Construction",
+      "description": "Traffic congestion reported on MG Road due to ongoing metro construction work. Commuters advised to take alternative routes.",
+      "source": "Bangalore Traffic Police",
+      "timestamp": "2025-05-06T03:56:50.429937",
+      "impact_level": "High"
+    },
+    {
+      "title": "New Traffic Signal System Implemented at Silk Board Junction",
+      "description": "Smart traffic signal system installed to improve traffic flow at the busy Silk Board junction.",
+      "source": "BBMP",
+      "timestamp": "2025-05-06T03:56:50.429937",
+      "impact_level": "Medium"
+    },
+    {
+      "title": "Road Closure on Bannerghatta Road",
+      "description": "Bannerghatta Road closed for maintenance work between 10 PM and 5 AM for the next three days.",
+      "source": "BBMP",
+      "timestamp": "2025-05-06T03:56:50.429937",
+      "impact_level": "High"
+    },
+    {
+      "title": "Traffic Diversion on Outer Ring Road",
+      "description": "Traffic diverted on Outer Ring Road due to ongoing flyover construction. Alternative routes suggested.",
+      "source": "Bangalore Traffic Police",
+      "timestamp": "2025-05-06T03:56:50.429937",
+      "impact_level": "Medium"
+    },
+    {
+      "title": "New Bus Lane Implementation",
+      "description": "Dedicated bus lanes implemented on major corridors to improve public transport efficiency.",
+      "source": "BMTC",
+      "timestamp": "2025-05-06T03:56:50.429937",
+      "impact_level": "Medium"
+    }
+  ],
+  "last_updated": "2025-05-06T03:56:50.429937"
+}
