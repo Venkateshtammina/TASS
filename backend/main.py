@@ -5,8 +5,6 @@ from pydantic import BaseModel
 from typing import List
 import requests
 from dotenv import load_dotenv
-#from news import router as news_router
-from traffic_db import get_traffic_last_24h
 from datetime import datetime, timedelta
 
 # Load environment variables
@@ -24,14 +22,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-#app.include_router(news_router, prefix="/api")
-
 class RouteRequest(BaseModel):
     origin: str
     destination: str
     avoid_tolls: bool = False
     avoid_highways: bool = False
     departure_time: str = "now"  # "now" or UNIX timestamp as string
+
+class StepData(BaseModel):
+    html_instructions: str
+    polyline: str
 
 class RouteData(BaseModel):
     polyline: str
@@ -42,14 +42,10 @@ class RouteData(BaseModel):
     start_location: str = ""
     end_location: str = ""
     steps: list = []
+    step_polylines: list = []
     avoid_tolls: bool = False
     avoid_highways: bool = False
-    eta: str = ""  # New field
-
-class TrafficData(BaseModel):
-    time: str
-    trafficLevel: float
-    duration: int
+    eta: str = ""
 
 @app.post("/api/routes", response_model=List[RouteData])
 def get_routes(request: RouteRequest):
@@ -96,6 +92,11 @@ def get_routes(request: RouteRequest):
                 step.get("html_instructions", "")
                 for step in leg.get("steps", [])
             ]
+            # Collect step polylines
+            step_polylines = [
+                step.get("polyline", {}).get("points", "")
+                for step in leg.get("steps", [])
+            ]
             # Calculate ETA
             if request.departure_time == "now":
                 dep_time = datetime.now()
@@ -116,6 +117,7 @@ def get_routes(request: RouteRequest):
                     start_location=leg.get("start_address", ""),
                     end_location=leg.get("end_address", ""),
                     steps=steps,
+                    step_polylines=step_polylines,
                     avoid_tolls=request.avoid_tolls,
                     avoid_highways=request.avoid_highways,
                     eta=eta_str
@@ -128,20 +130,22 @@ def get_routes(request: RouteRequest):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error fetching routes: {str(e)}")
 
-@app.get("/api/traffic", response_model=List[TrafficData])
-def get_traffic_data(label: str = "Bangalore_Center"):
-    try:
-        rows = get_traffic_last_24h(label)
-        traffic_data = []
-        for timestamp, duration in rows:
-            traffic_data.append({
-                "time": timestamp[11:16],
-                "trafficLevel": 0,
-                "duration": int(duration)
-            })
-        return traffic_data
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching historical traffic data: {str(e)}")
+# Real-time alerts endpoint (mocked)
+@app.get("/api/alerts")
+def get_alerts():
+    # In production, fetch from a real traffic/incident API
+    return [
+        {
+            "type": "Road Closure",
+            "description": "Kanakapura Main Rd closed near Dmart due to construction.",
+            "location": {"lat": 12.891, "lng": 77.579}
+        },
+        {
+            "type": "Accident",
+            "description": "Accident at Banashankari Temple junction. Expect delays.",
+            "location": {"lat": 12.925, "lng": 77.573}
+        }
+    ]
 
 @app.get("/api/traffic-news")
 def get_traffic_news():

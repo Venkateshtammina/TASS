@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from "axios";
 import RouteForm from './components/RouteForm';
-import TrafficGraph from './components/TrafficGraph';
 import Navbar from './components/Navbar';
 import TrafficNews from './components/TrafficNews';
 import './styles/App.css';
@@ -14,14 +13,15 @@ const App = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedRoute, setSelectedRoute] = useState(null);
-  const [trafficData, setTrafficData] = useState([]);
   const [formData, setFormData] = useState(null);
   const [activeTab, setActiveTab] = useState('routes');
   const [isMapInitialized, setIsMapInitialized] = useState(false);
   const [directionsRenderer, setDirectionsRenderer] = useState(null);
   const [routeFormMinimized, setRouteFormMinimized] = useState(false);
+  const [alerts, setAlerts] = useState([]);
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
+  const trafficLayerRef = useRef(null);
 
   function getUnixTimestampForToday(timeStr) {
     if (!timeStr) return "now";
@@ -66,7 +66,6 @@ const App = () => {
     setError(null);
     setFormData(formData);
     setSelectedRoute(null);
-    setTrafficData([]);
     setRouteFormMinimized(false);
 
     try {
@@ -91,17 +90,20 @@ const App = () => {
     }
   };
 
-  const fetchTrafficData = async () => {
-    try {
-      const response = await axios.get('http://localhost:8000/api/traffic', {
-        params: { label: "Bangalore_Center" }
-      });
-      setTrafficData(Array.isArray(response.data) ? response.data : []);
-    } catch (err) {
-      setError("Failed to fetch traffic data. Please try again later.");
-      setTrafficData([]);
-    }
-  };
+  // Fetch alerts on mount and every 60 seconds
+  useEffect(() => {
+    const fetchAlerts = async () => {
+      try {
+        const res = await axios.get('http://localhost:8000/api/alerts');
+        setAlerts(res.data);
+      } catch (e) {
+        setAlerts([]);
+      }
+    };
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Draw all polylines for route selection (before a route is selected)
   const displayAllPolylines = (routesData) => {
@@ -118,6 +120,7 @@ const App = () => {
       directionsRenderer.setPanel(null);
     }
 
+    // Draw overview polylines for each route
     const geoJson = {
       type: "FeatureCollection",
       features: routesData.map((route, index) => ({
@@ -203,6 +206,32 @@ const App = () => {
       directionsRenderer.setPanel(null);
     }
 
+    // Draw step polylines for the selected route
+    if (route.step_polylines && route.step_polylines.length > 0) {
+      route.step_polylines.forEach((stepPolyline, stepIdx) => {
+        if (stepPolyline) {
+          const stepCoords = decodePolyline(stepPolyline);
+          const stepFeature = {
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: stepCoords
+            },
+            properties: {
+              name: `Step ${stepIdx + 1}`,
+              routeIndex: routeIdx,
+              stepIndex: stepIdx
+            }
+          };
+          mapInstance.current.data.addGeoJson({
+            type: "FeatureCollection",
+            features: [stepFeature]
+          });
+        }
+      });
+    }
+
+    // Optionally, you can still use DirectionsRenderer for panel
     const directionsService = new window.google.maps.DirectionsService();
     const newRenderer = new window.google.maps.DirectionsRenderer({
       map: mapInstance.current,
@@ -235,13 +264,16 @@ const App = () => {
   const handleRouteSelect = (index) => {
     setSelectedRoute(index);
     setRouteFormMinimized(true);
-    fetchTrafficData(index);
   };
 
   // Expand RouteForm and hide directions
   const handleExpandRouteForm = () => {
     setRouteFormMinimized(false);
     setSelectedRoute(null);
+    // Optionally, redraw all polylines
+    if (routes.length > 0 && mapInstance.current) {
+      displayAllPolylines(routes);
+    }
   };
 
   useEffect(() => {
@@ -270,6 +302,11 @@ const App = () => {
           fullscreenControl: true
         });
 
+        // --- Add live traffic overlay ---
+        const trafficLayer = new window.google.maps.TrafficLayer();
+        trafficLayer.setMap(mapInstance.current);
+        trafficLayerRef.current = trafficLayer;
+
         const congestionPoints = [
           { lat: 12.9716, lng: 77.5946, title: "MG Road Junction" },
           { lat: 12.9784, lng: 77.6408, title: "Indiranagar Junction" },
@@ -292,14 +329,36 @@ const App = () => {
           });
         });
 
+        // Use custom, high-contrast colors for your routes to stand out from Google traffic colors
+        const customRouteColors = [
+          "#8e24aa", // purple
+          "#ff6f00", // orange
+          "#00bcd4", // cyan
+          "#c62828", // dark red
+          "#43a047", // dark green
+          "#fbc02d", // yellow
+          "#3949ab", // indigo
+          "#d84315", // deep orange
+        ];
+
         mapInstance.current.data.setStyle(function(feature) {
-          const routeIndex = parseInt(feature.getProperty('name').split(' ')[1]) - 1;
-          const colors = ['#4285F4', '#DB4437', '#0F9D58'];
+          const routeIndex = feature.getProperty('routeIndex');
+          const stepIndex = feature.getProperty('stepIndex');
+          if (typeof stepIndex === 'number') {
+            // Step polyline: use black for high contrast
+            return {
+              strokeColor: '#000000',
+              strokeWeight: 5,
+              strokeOpacity: 0.9,
+              zIndex: 2
+            };
+          }
+          // Route overview polyline: use custom color
           return {
-            strokeColor: colors[routeIndex % colors.length],
-            strokeWeight: 6,
-            strokeOpacity: 0.8,
-            zIndex: -1
+            strokeColor: customRouteColors[routeIndex % customRouteColors.length],
+            strokeWeight: 7,
+            strokeOpacity: 1,
+            zIndex: 1
           };
         });
 
@@ -330,6 +389,9 @@ const App = () => {
       if (mapInstance.current) {
         mapInstance.current = null;
       }
+      if (trafficLayerRef.current) {
+        trafficLayerRef.current.setMap(null);
+      }
     };
   }, []);
 
@@ -348,26 +410,122 @@ const App = () => {
     }
   }, [activeTab, isMapInitialized]);
 
+  // Responsive styles
+  const responsiveStyles = `
+    @media (max-width: 900px) {
+      .routes-container {
+        min-width: 90vw !important;
+        max-width: 98vw !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+        padding: 12px !important;
+      }
+      .routes-list .route-item {
+        font-size: 15px !important;
+      }
+    }
+    @media (max-width: 600px) {
+      .routes-container {
+        min-width: 98vw !important;
+        max-width: 99vw !important;
+        left: 50% !important;
+        right: auto !important;
+        transform: translateX(-50%) !important;
+        padding: 6px !important;
+      }
+      .routes-list .route-item {
+        font-size: 13px !important;
+      }
+      .app-container {
+        padding: 0 !important;
+      }
+      .map-container {
+        min-height: 300px !important;
+      }
+    }
+    @media (max-width: 600px) {
+      .alerts-panel {
+        max-width: 98vw !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        padding: 8px !important;
+        font-size: 14px !important;
+      }
+    }
+    @media (max-width: 900px) {
+      .flex-row-responsive {
+        flex-direction: column !important;
+        gap: 16px !important;
+        left: 0 !important;
+        top: 0 !important;
+        position: static !important;
+      }
+      .route-form-responsive {
+        min-width: 90vw !important;
+        max-width: 98vw !important;
+      }
+      #directions-panel {
+        min-width: 90vw !important;
+        max-width: 98vw !important;
+        left: 0 !important;
+        top: 0 !important;
+        position: static !important;
+      }
+    }
+  `;
+
   return (
-    <div className="app-container">
+    <div className="app-container" style={{padding: 16}}>
+      <style>{responsiveStyles}</style>
       <Navbar activeTab={activeTab} onTabChange={setActiveTab} />
+
+      {/* Alerts Panel - only show on 'routes' tab */}
+      {activeTab === 'routes' && alerts.length > 0 && (
+        <div
+          className="alerts-panel"
+          style={{
+            background: "#fff3cd",
+            color: "#856404",
+            border: "1px solid #ffeeba",
+            borderRadius: 8,
+            padding: "12px 20px",
+            margin: "32px 32px 16px 32px",
+            maxWidth: 600,
+            zIndex: 100,
+            position: "absolute",
+            top: 60,
+            left: "50%",
+            transform: "translateX(-50%)"
+          }}>
+          <strong>Real-Time Alerts:</strong>
+          <ul style={{margin: 0, paddingLeft: 20}}>
+            {alerts.map((alert, idx) => (
+              <li key={idx}>
+                <b>{alert.type}:</b> {alert.description}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {activeTab === 'routes' ? (
         <>
           {/* Flex container for RouteForm and Directions */}
           <div
+            className="flex-row-responsive"
             style={{
               position: "absolute",
               top: 32,
               left: 32,
-              zIndex: 30,
+              zIndex: 60,
               display: "flex",
               flexDirection: "row",
-              gap: 16
+              gap: 40
             }}
           >
             {/* RouteForm */}
-            <div style={{ zIndex: 31 }}>
+            <div className="route-form-responsive" style={{ zIndex: 31 , minWidth: 320, maxWidth: 400, maxHeight: 600 }}>
               {!routeFormMinimized ? (
                 <div style={{ position: "relative" }}>
                   <RouteForm onSubmit={fetchRoutes} isLoading={loading} />
@@ -381,9 +539,9 @@ const App = () => {
                         color: "#fff",
                         border: "none",
                         borderRadius: 4,
-                        padding: "2px 8px",
+                        padding: "8px 8px",
                         cursor: "pointer",
-                        fontSize: 12
+                        fontSize: 12,
                       }}
                       onClick={() => setRouteFormMinimized(true)}
                       title="Minimize"
@@ -397,6 +555,8 @@ const App = () => {
                   style={{
                     width: 40,
                     height: 40,
+                    position: "absolute",
+                    top: 20,
                     borderRadius: "50%",
                     background: "#2196f3",
                     color: "#fff",
@@ -420,13 +580,16 @@ const App = () => {
                 id="directions-panel"
                 style={{
                   zIndex: 31,
+                  position: "absolute",
+                  top: 20,
+                  left: 40,
                   background: "#fff",
                   borderRadius: 12,
                   boxShadow: "0 2px 16px rgba(0,0,0,0.15)",
                   padding: 24,
                   minWidth: 320,
                   maxWidth: 350,
-                  maxHeight: 400,
+                  maxHeight: 404,
                   overflowY: "auto"
                 }}
               />
@@ -447,8 +610,8 @@ const App = () => {
                   borderRadius: 12,
                   boxShadow: "0 2px 16px rgba(0,0,0,0.15)",
                   padding: 24,
-                  minWidth: 320,
-                  maxWidth: 350,
+                  minWidth: 520,
+                  maxWidth: 520,
                   maxHeight: 600,
                   overflowY: "auto"
                 }}
@@ -483,23 +646,31 @@ const App = () => {
                     </div>
                   ))}
                 </div>
-                <RouteComparisonTable routes={routes} />
+                {/* Show comparison table only if no route is selected */}
+                {selectedRoute === null && <RouteComparisonTable routes={routes} />}
+                {/* Show details for selected route only */}
+                {selectedRoute !== null && (
+                  <div style={{marginTop: 24, padding: 16, background: "#f9f9f9", borderRadius: 8}}>
+                    <h4>Route {selectedRoute + 1} Details</h4>
+                    <p><strong>Distance:</strong> {routes[selectedRoute].distance}</p>
+                    <p><strong>Duration:</strong> {routes[selectedRoute].duration}</p>
+                    <p><strong>Real-Time:</strong> {routes[selectedRoute].duration_in_traffic}</p>
+                    <p><strong>ETA:</strong> {routes[selectedRoute].eta || "N/A"}</p>
+                    <p><strong>Start:</strong> {routes[selectedRoute].start_address}</p>
+                    <p><strong>End:</strong> {routes[selectedRoute].end_address}</p>
+                    <div>
+                      <strong>Steps:</strong>
+                      <ol>
+                        {routes[selectedRoute].steps && routes[selectedRoute].steps.map((step, idx) => (
+                          <li key={idx} dangerouslySetInnerHTML={{__html: step}} />
+                        ))}
+                      </ol>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
-
-          {selectedRoute !== null && (
-            <>
-              {trafficData && trafficData.length > 0 ? (
-                <TrafficGraph
-                  routeData={trafficData}
-                  selectedRoute={selectedRoute}
-                />
-              ) : (
-                <div style={{padding: 16, color: "#888"}}>No traffic data available for this route.</div>
-              )}
-            </>
-          )}
         </>
       ) : (
         <TrafficNews />
