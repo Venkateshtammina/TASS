@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: tass-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: google_cloud
+        value: <YOUR_GOOGLE_API_KEY>
+      - key: news_api_key
+        value: <YOUR_NEWS_API_KEY>
+    plan: free
+
+  - type: web
+    name: tass-frontend
+    env: static
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: REACT_APP_API_URL
+        value: https://tass-backend.onrender.com
+    plan: free
