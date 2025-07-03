@@ -62,11 +62,11 @@ Example usage in README:
 
 ### Route Suggestion Example
 
-![Route Suggestion](screenshots/route-suggestion.png)
+![Route Suggestion](screenshots/traffic-news.png)
 
 ### Traffic News Example
 
-![Traffic News](screenshots/traffic-news.png)
+![Traffic News](screenshots/route-suggestion.png)
 
 ---
 
