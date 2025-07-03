@@ -130,23 +130,42 @@ def get_routes(request: RouteRequest):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error fetching routes: {str(e)}")
 
-# Real-time alerts endpoint (mocked)
-@app.get("/api/alerts")
-def get_alerts():
-    # In production, fetch from a real traffic/incident API
-    return [
-        {
-            "type": "Road Closure",
-            "description": "Kanakapura Main Rd closed near Dmart due to construction.",
-            "location": {"lat": 12.891, "lng": 77.579}
-        },
-        {
-            "type": "Accident",
-            "description": "Accident at Banashankari Temple junction. Expect delays.",
-            "location": {"lat": 12.925, "lng": 77.573}
-        }
-    ]
-
+# # Real-time alerts endpoint using TomTom API
+# @app.get("/api/alerts")
+# def get_alerts():
+#     try:
+#         TOMTOM_API_KEY = os.environ.get("tomtom_api_key")
+#         if not TOMTOM_API_KEY:
+#             raise HTTPException(status_code=500, detail="TomTom API key not set.")
+#         url = "https://api.tomtom.com/traffic/services/5/incidentDetails.json"
+#         params = {
+#             "bbox": "77.55,12.90,77.65,13.05",  # Bengaluru bounding box
+#             "key": TOMTOM_API_KEY,
+#             "language": "en"
+#         }
+#         resp = requests.get(url, params=params, timeout=8)
+#         resp.raise_for_status()
+#         data = resp.json()
+#         alerts = []
+#         for incident in data.get("incidents", []):
+#             props = incident.get("properties", {})
+#             geom = incident.get("geometry", {})
+#             coords = geom.get("coordinates", [None, None])
+#             alerts.append({
+#                 "type": props.get("eventCode", "Incident"),
+#                 "description": props.get("description", "No description"),
+#                 "location": {
+#                     "lat": coords[1],
+#                     "lng": coords[0]
+#                 }
+#             })
+#         return alerts
+#     except Exception as e:
+#         if hasattr(e, 'response') and e.response is not None:
+#             print("TomTom response:", e.response.text)
+#         print(f"Error fetching real-time alerts: {str(e)}")
+#         raise HTTPException(status_code=500, detail=f"Error fetching real-time alerts: {str(e)}")
+    
 @app.get("/api/traffic-news")
 def get_traffic_news():
     try:
@@ -176,6 +195,5 @@ def get_traffic_news():
 
 if __name__ == "__main__":
     import uvicorn
-    import os
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
