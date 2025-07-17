@@ -2,14 +2,14 @@ import os
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 import requests
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 
 # Load environment variables
 load_dotenv()
-api_key = os.environ.get('google_cloud')
+google_cloud_api_key = os.environ.get('google_cloud') # Renamed for clarity with new variable
 NEWS_API_KEY = os.environ.get('news_api_key')
 
 app = FastAPI()
@@ -47,6 +47,25 @@ class RouteData(BaseModel):
     avoid_highways: bool = False
     eta: str = ""
 
+# New Pydantic model for Geocode response
+class GeocodeResponse(BaseModel):
+    latitude: float
+    longitude: float
+    address: str
+
+# New Pydantic models for Weather request and response
+class WeatherRequest(BaseModel):
+    latitude: float
+    longitude: float
+
+class WeatherData(BaseModel):
+    temperature: float
+    humidity: int
+    wind_speed: float
+    weather_description: str
+    precipitation_probability: Optional[int] = None
+    time: str
+
 @app.post("/api/routes", response_model=List[RouteData])
 def get_routes(request: RouteRequest):
     url = "https://maps.googleapis.com/maps/api/directions/json"
@@ -62,7 +81,7 @@ def get_routes(request: RouteRequest):
                 "highways": request.avoid_highways
             }.items() if v]
         ) if (request.avoid_tolls or request.avoid_highways) else None,
-        "key": api_key
+        "key": google_cloud_api_key # Use the renamed API key variable
     }
     params = {k: v for k, v in params.items() if v is not None}
 
@@ -130,67 +149,100 @@ def get_routes(request: RouteRequest):
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error fetching routes: {str(e)}")
 
-# # Real-time alerts endpoint using TomTom API
-# @app.get("/api/alerts")
-# def get_alerts():
-#     try:
-#         TOMTOM_API_KEY = os.environ.get("tomtom_api_key")
-#         if not TOMTOM_API_KEY:
-#             raise HTTPException(status_code=500, detail="TomTom API key not set.")
-#         url = "https://api.tomtom.com/traffic/services/5/incidentDetails.json"
-#         params = {
-#             "bbox": "77.55,12.90,77.65,13.05",  # Bengaluru bounding box
-#             "key": TOMTOM_API_KEY,
-#             "language": "en"
-#         }
-#         resp = requests.get(url, params=params, timeout=8)
-#         resp.raise_for_status()
-#         data = resp.json()
-#         alerts = []
-#         for incident in data.get("incidents", []):
-#             props = incident.get("properties", {})
-#             geom = incident.get("geometry", {})
-#             coords = geom.get("coordinates", [None, None])
-#             alerts.append({
-#                 "type": props.get("eventCode", "Incident"),
-#                 "description": props.get("description", "No description"),
-#                 "location": {
-#                     "lat": coords[1],
-#                     "lng": coords[0]
-#                 }
-#             })
-#         return alerts
-#     except Exception as e:
-#         if hasattr(e, 'response') and e.response is not None:
-#             print("TomTom response:", e.response.text)
-#         print(f"Error fetching real-time alerts: {str(e)}")
-#         raise HTTPException(status_code=500, detail=f"Error fetching real-time alerts: {str(e)}")
-    
-@app.get("/api/traffic-news")
-def get_traffic_news():
+# New endpoint to geocode an address
+@app.get("/api/geocode", response_model=GeocodeResponse)
+def geocode_address(address: str):
+    geocode_url = "https://maps.googleapis.com/maps/api/geocode/json"
+    params = {
+        "address": address,
+        "key": google_cloud_api_key #
+    }
     try:
-        url = "https://newsapi.org/v2/everything"
-        params = {
-            "q": "bangalore traffic OR bangalore road OR bangalore accident",
-            "sortBy": "publishedAt",
-            "language": "en",
-            "apiKey": NEWS_API_KEY,
-            "pageSize": 10
+        response = requests.get(geocode_url, params=params, timeout=5)
+        response.raise_for_status()
+        result = response.json()
+
+        if result["status"] == "OK" and result["results"]:
+            location = result["results"][0]["geometry"]["location"]
+            formatted_address = result["results"][0]["formatted_address"]
+            return GeocodeResponse(
+                latitude=location["lat"],
+                longitude=location["lng"],
+                address=formatted_address
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Address not found or geocoding error.")
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Geocoding API timed out. Please try again.")
+    except requests.exceptions.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Error geocoding address: {str(e)}")
+
+@app.get("/api/weather", response_model=WeatherData)
+def get_current_weather(latitude: float, longitude: float): # Changed to query parameters for simplicity in GET
+    url = "https://api.open-meteo.com/v1/forecast"
+    params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code,precipitation_probability",
+        "timezone": "auto",
+    }
+    try:
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        result = response.json()
+
+        current_data = result.get("current", {})
+        temperature = current_data.get("temperature_2m")
+        humidity = current_data.get("relative_humidity_2m")
+        wind_speed = current_data.get("wind_speed_10m")
+        weather_code = current_data.get("weather_code")
+        precipitation_probability = current_data.get("precipitation_probability")
+        time = current_data.get("time")
+
+        # Basic mapping of weather codes to descriptions (simplified for demo)
+        weather_descriptions = {
+            0: "Clear sky",
+            1: "Mainly clear",
+            2: "Partly cloudy",
+            3: "Overcast",
+            45: "Fog",
+            48: "Depositing rime fog",
+            51: "Drizzle: Light",
+            53: "Drizzle: Moderate",
+            55: "Drizzle: Dense intensity",
+            56: "Freezing Drizzle: Light",
+            57: "Freezing Drizzle: Dense intensity",
+            61: "Rain: Slight",
+            63: "Rain: Moderate",
+            65: "Rain: Heavy intensity",
+            66: "Freezing Rain: Light",
+            67: "Freezing Rain: Heavy intensity",
+            71: "Snow fall: Slight",
+            73: "Snow fall: Moderate",
+            75: "Snow fall: Heavy intensity",
+            77: "Snow grains",
+            80: "Rain showers: Slight",
+            81: "Rain showers: Moderate",
+            82: "Rain showers: Violent",
+            85: "Snow showers: Slight",
+            86: "Snow showers: Heavy",
+            95: "Thunderstorm: Slight or moderate",
+            96: "Thunderstorm with slight hail",
+            99: "Thunderstorm with heavy hail",
         }
-        resp = requests.get(url, params=params, timeout=5)
-        resp.raise_for_status()
-        data = resp.json()
-        articles = [
-            {
-                "title": article["title"],
-                "description": article["description"],
-                "url": article["url"],
-                "publishedAt": article["publishedAt"]
-            }
-            for article in data.get("articles", [])
-        ]
-        return articles
-    except Exception as e:
+        description = weather_descriptions.get(weather_code, "Unknown")
+
+        return WeatherData(
+            temperature=temperature,
+            humidity=humidity,
+            wind_speed=wind_speed,
+            weather_description=description,
+            precipitation_probability=precipitation_probability,
+            time=time
+        )
+    except requests.exceptions.Timeout:
+        raise HTTPException(status_code=504, detail="Weather API timed out. Please try again.")
+    except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Error fetching traffic news: {str(e)}")
 
 if __name__ == "__main__":

@@ -16,32 +16,39 @@ const RouteForm = ({ onSubmit, isLoading }) => {
 
   useEffect(() => {
     const initializeAutocomplete = () => {
+      // Check if Google Maps API and Places library are loaded
       if (window.google && window.google.maps && window.google.maps.places) {
+        // Initialize origin autocomplete if ref is available and not already initialized
         if (originRef.current && !originAutocomplete) {
-          const originAutocomplete = new window.google.maps.places.Autocomplete(originRef.current, {
-            types: ['geocode', 'establishment'],
-            componentRestrictions: { country: 'in' }
+          const newOriginAutocomplete = new window.google.maps.places.Autocomplete(originRef.current, {
+            types: ['geocode', 'establishment'], // Restrict results to addresses and businesses
+            componentRestrictions: { country: 'in' } // Restrict to India
           });
-          setOriginAutocomplete(originAutocomplete);
+          setOriginAutocomplete(newOriginAutocomplete);
 
-          originAutocomplete.addListener('place_changed', () => {
-            const place = originAutocomplete.getPlace();
+          // Add listener for when a place is selected from origin autocomplete
+          newOriginAutocomplete.addListener('place_changed', () => {
+            const place = newOriginAutocomplete.getPlace();
             if (place.formatted_address) {
+              // Update form data with the selected formatted address
               setFormData(prev => ({ ...prev, origin: place.formatted_address }));
             }
           });
         }
 
+        // Initialize destination autocomplete if ref is available and not already initialized
         if (destinationRef.current && !destinationAutocomplete) {
-          const destinationAutocomplete = new window.google.maps.places.Autocomplete(destinationRef.current, {
+          const newDestinationAutocomplete = new window.google.maps.places.Autocomplete(destinationRef.current, {
             types: ['geocode', 'establishment'],
             componentRestrictions: { country: 'in' }
           });
-          setDestinationAutocomplete(destinationAutocomplete);
+          setDestinationAutocomplete(newDestinationAutocomplete);
 
-          destinationAutocomplete.addListener('place_changed', () => {
-            const place = destinationAutocomplete.getPlace();
+          // Add listener for when a place is selected from destination autocomplete
+          newDestinationAutocomplete.addListener('place_changed', () => {
+            const place = newDestinationAutocomplete.getPlace();
             if (place.formatted_address) {
+              // Update form data with the selected formatted address
               setFormData(prev => ({ ...prev, destination: place.formatted_address }));
             }
           });
@@ -49,20 +56,21 @@ const RouteForm = ({ onSubmit, isLoading }) => {
       }
     };
 
-    // Try to initialize immediately
+    // Try to initialize immediately on component mount
     initializeAutocomplete();
 
-    // Set up an interval to check for Google Maps API availability
+    // Set up an interval to repeatedly check for Google Maps API availability
+    // This is useful if the script loads asynchronously after component render
     const checkInterval = setInterval(() => {
       if (window.google && window.google.maps && window.google.maps.places) {
-        initializeAutocomplete();
-        clearInterval(checkInterval);
+        initializeAutocomplete(); // Attempt to initialize if not already done
+        clearInterval(checkInterval); // Clear the interval once initialized
       }
-    }, 100);
+    }, 100); // Check every 100 milliseconds
 
-    // Cleanup interval on unmount
+    // Cleanup function to clear the interval when the component unmounts
     return () => clearInterval(checkInterval);
-  }, [originAutocomplete, destinationAutocomplete]);
+  }, [originAutocomplete, destinationAutocomplete]); // Dependencies: re-run if autocomplete instances change
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -74,6 +82,7 @@ const RouteForm = ({ onSubmit, isLoading }) => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    // Call the onSubmit prop function passed from App.js with the current form data
     onSubmit(formData);
   };
 
@@ -84,11 +93,11 @@ const RouteForm = ({ onSubmit, isLoading }) => {
         <div className="form-group">
           <label className="form-label">Origin:</label>
           <input
-            ref={originRef}
+            ref={originRef} // Attach ref for Google Autocomplete
             type="text"
             name="origin"
             value={formData.origin}
-            onChange={handleChange}
+            onChange={handleChange} // Keep onChange for manual typing
             className="form-input"
             required
             placeholder="Enter origin"
@@ -99,11 +108,11 @@ const RouteForm = ({ onSubmit, isLoading }) => {
         <div className="form-group">
           <label className="form-label">Destination:</label>
           <input
-            ref={destinationRef}
+            ref={destinationRef} // Attach ref for Google Autocomplete
             type="text"
             name="destination"
             value={formData.destination}
-            onChange={handleChange}
+            onChange={handleChange} // Keep onChange for manual typing
             className="form-input"
             required
             placeholder="Enter destination"
@@ -137,10 +146,10 @@ const RouteForm = ({ onSubmit, isLoading }) => {
         
         <button 
           type="submit" 
-          disabled={isLoading}
+          disabled={isLoading} // Button disabled when loading
           className="submit-button"
         >
-          {isLoading ? 'Loading...' : 'Get Routes'}
+          {isLoading ? 'Loading...' : 'Get Routes & Weather'} {/* Dynamic button text */}
         </button>
       </form>
     </div>
